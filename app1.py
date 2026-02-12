@@ -1,92 +1,158 @@
 import streamlit as st
+import pandas as pd
+import numpy as np
 
-# Setup Page
-st.set_page_config(page_title="DE Loan Calculator", layout="wide")
+# Page Configuration
+st.set_page_config(page_title="DE Loan & Mortgage Pro", layout="wide")
 
-# Sidebar Navigation
-st.sidebar.title("Navigation")
-app_mode = st.sidebar.radio("Select Calculator", ["🚗 Car Loan", "🏠 House Mortgage"])
+# Custom CSS for German Market feel
+st.markdown("""
+    <style>
+    .main { background-color: #f5f7f9; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #e0e0e0; }
+    </style>
+    """, unsafe_allow_stdio=True)
 
-# --- CAR LOAN SECTION ---
-if app_mode == "🚗 Car Loan":
-    st.title("Car Loan Calculator (German Market)")
+# --- SIDEBAR NAVIGATION ---
+st.sidebar.title("🇩🇪 Finance Calculator")
+mode = st.sidebar.radio("Select Category", ["🏠 House Mortgage", "🚗 Car Loan"])
+
+# --- SHARED FUNCTIONS ---
+def calculate_schedule(loan_amount, annual_interest, monthly_payment, annual_sondertilgung, max_years=40):
+    balance = loan_amount
+    data = []
+    total_interest = 0
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        vehicle_price = st.number_input("Vehicle Price (€)", min_value=0, value=30000)
-        down_payment = st.number_input("Down Payment (€)", min_value=0, value=5000)
+    for month in range(1, max_years * 12 + 1):
+        if balance <= 0:
+            break
+            
+        interest_charge = balance * (annual_interest / 100 / 12)
+        principal_repayment = monthly_payment - interest_charge
         
-        # German Market Standards
-        months = st.selectbox("Term (Months)", [24, 36, 48, 60, 72, 84, 96])
+        # Apply regular payment
+        balance -= principal_repayment
+        total_interest += interest_charge
         
-        interest_type = st.radio("Interest Rate", ["Market Average (4.99%)", "Manual Entry"])
-        if interest_type == "Manual Entry":
-            interest_rate = st.number_input("Annual Interest Rate (%)", value=5.0, step=0.1)
-        else:
-            interest_rate = 4.99
-
-    loan_amount = vehicle_price - down_payment
-    # Monthly interest rate
-    r = (interest_rate / 100) / 12
-    # Monthly payment formula (Amortization)
-    if loan_amount > 0:
-        monthly_payment = loan_amount * (r * (1 + r)**months) / ((1 + r)**months - 1)
-    else:
-        monthly_payment = 0
-
-    with col2:
-        st.metric("Monthly Payment", f"{monthly_payment:,.2f} €")
-        st.write(f"**Total Loan Amount:** {loan_amount:,.2f} €")
-        st.write(f"**Total Interest Paid:** {(monthly_payment * months) - loan_amount:,.2f} €")
+        # Apply Sondertilgung (once a year in December)
+        if month % 12 == 0 and balance > 0:
+            balance -= annual_sondertilgung
+            
+        # Safety check for overpayment
+        if balance < 0:
+            balance = 0
+            
+        data.append({"Month": month, "Remaining_Debt": balance, "Total_Interest": total_interest})
+        
+    return pd.DataFrame(data)
 
 # --- HOUSE MORTGAGE SECTION ---
-elif app_mode == "🏠 House Mortgage":
-    st.title("House Mortgage (Baufinanzierung)")
+if mode == "🏠 House Mortgage":
+    st.title("Immobilienfinanzierung (Mortgage)")
     
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([1, 2])
     
     with col1:
-        st.subheader("Property Details")
-        house_price = st.number_input("Purchase Price (€)", min_value=0, value=400000)
-        own_capital = st.number_input("Own Capital (Eigenkapital) (€)", min_value=0, value=80000)
+        st.subheader("1. Object Costs")
+        price = st.number_input("Purchase Price (€)", value=450000, step=5000)
+        capital = st.number_input("Own Capital (Eigenkapital) (€)", value=90000, step=5000)
         
-        st.subheader("Ancillary Costs (Nebenkosten)")
+        st.subheader("2. Ancillary Costs (Nebenkosten)")
+        state_tax = st.selectbox("Grunderwerbsteuer (%)", 
+                               options=[3.5, 5.0, 5.5, 6.0, 6.5], index=4, 
+                               help="NRW/Berlin: 6.5%, Bavaria: 3.5%")
         notar_rate = st.slider("Notar & Grundbuch (%)", 1.0, 2.5, 2.0)
         makler_rate = st.number_input("Makler Fee (%)", value=3.57)
-        tax_rate = st.selectbox("Grunderwerbsteuer (%)", [3.5, 5.0, 5.5, 6.0, 6.5], index=3)
         
-        st.subheader("Financing Terms")
-        interest_input = st.radio("Mortgage Interest", ["Market Estimate (3.8%)", "Manual Entry"])
-        interest = st.number_input("Annual Interest (%)", value=3.8) if interest_input == "Manual Entry" else 3.8
-        tilgung = st.number_input("Initial Repayment (Tilgung) (%)", value=2.0)
+        st.subheader("3. Loan Terms")
+        interest = st.number_input("Annual Interest (%)", value=3.85, step=0.05)
+        tilgung = st.number_input("Initial Repayment (Tilgung %) ", value=2.0, step=0.1)
+        sondertilgung = st.number_input("Annual Extra Payment (€)", value=0, step=500)
+        
+        fixed_period = st.selectbox("Fixed Interest Period (Years)", [10, 15, 20, 25, 30, "Manual"])
+        if fixed_period == "Manual":
+            fixed_period = st.number_input("Enter years", value=12)
 
-    # Calculations
-    notar_cost = house_price * (notar_rate / 100)
-    makler_cost = house_price * (makler_rate / 100)
-    tax_cost = house_price * (tax_rate / 100)
-    total_incidental = notar_cost + makler_cost + tax_cost
+    # Logic: Calculations
+    nebunkosten_total = price * (state_tax + notar_rate + makler_rate) / 100
+    total_investment = price + nebunkosten_total
+    loan_needed = total_investment - capital
     
-    total_cost = house_price + total_incidental
-    loan_needed = total_cost - own_capital
-    
-    # German Annuity Formula: (Interest + Tilgung) * Loan / 12
+    # German Annuity Rate = (Interest + Tilgung) * Loan / 12
     monthly_rate = (loan_needed * (interest + tilgung) / 100) / 12
-
+    
+    df_mortgage = calculate_schedule(loan_needed, interest, monthly_rate, sondertilgung)
+    
     with col2:
-        st.subheader("Calculation Summary")
-        if loan_needed > 0:
-            st.metric("Estimated Monthly Rate", f"{monthly_rate:,.2f} €")
+        st.subheader("Financial Overview")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Monthly Rate", f"{monthly_rate:,.2f} €")
+        m2.metric("Total Loan", f"{loan_needed:,.2f} €")
+        m3.metric("Nebenkosten", f"{nebunkosten_total:,.2f} €")
+        
+        # Results after Fixed Period
+        months_fixed = fixed_period * 12
+        if len(df_mortgage) >= months_fixed:
+            restschuld = df_mortgage.iloc[months_fixed-1]['Remaining_Debt']
+            paid_interest = df_mortgage.iloc[months_fixed-1]['Total_Interest']
         else:
-            st.success("Your capital covers the whole cost!")
+            restschuld = 0
+            paid_interest = df_mortgage['Total_Interest'].max()
 
         st.write("---")
-        st.write(f"**Purchase Price:** {house_price:,.2f} €")
-        st.write(f"**Ancillary Costs:** {total_incidental:,.2f} €")
-        st.write(f"**Total Required:** {total_cost:,.2f} €")
-        st.write(f"**Loan Amount:** {max(0.0, loan_needed):,.2f} €")
+        st.subheader(f"Status after {fixed_period} Years")
+        r1, r2 = st.columns(2)
+        r1.error(f"Remaining Debt: {restschuld:,.2f} €")
+        r2.info(f"Total Interest Paid: {paid_interest:,.2f} €")
         
-        with st.expander("Breakdown of Fees"):
-            st.write(f"Notary & Registry: {notar_cost:,.2f} €")
-            st.write(f"Property Tax: {tax_cost:,.2f} €")
-            st.write(f"Broker Fee: {makler_cost:,.2f} €")
+        # Timeline Chart
+        st.line_chart(df_mortgage.set_index("Month")["Remaining_Debt"])
+        
+        years_total = len(df_mortgage) / 12
+        st.success(f"⏱ Estimated total time to pay off: **{years_total:.1f} years**")
+
+# --- CAR LOAN SECTION ---
+else:
+    st.title("Autokredit (Car Loan)")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        car_price = st.number_input("Car Price (€)", value=35000)
+        car_down = st.number_input("Down Payment (€)", value=5000)
+        
+        term_type = st.selectbox("Term (Years)", [1, 2, 3, 4, 5, 6, 7, "Manual"])
+        if term_type == "Manual":
+            car_years = st.number_input("Enter Years", value=4)
+        else:
+            car_years = term_type
+            
+        car_interest = st.number_input("Interest Rate (%)", value=5.99)
+        car_sondertilgung = st.number_input("Yearly Bonus Payment (€)", value=0)
+
+    # Standard Amortization Formula
+    car_loan = car_price - car_down
+    months_car = car_years * 12
+    r_car = (car_interest / 100) / 12
+    
+    if car_loan > 0:
+        car_monthly = car_loan * (r_car * (1 + r_car)**months_car) / ((1 + r_car)**months_car - 1)
+    else:
+        car_monthly = 0
+        
+    df_car = calculate_schedule(car_loan, car_interest, car_monthly, car_sondertilgung, max_years=car_years+1)
+
+    with col2:
+        st.metric("Monthly Car Payment", f"{car_monthly:,.2f} €")
+        st.write(f"**Net Loan Amount:** {car_loan:,.2f} €")
+        
+        st.subheader("Payment Schedule")
+        st.area_chart(df_car.set_index("Month")["Remaining_Debt"])
+        
+        total_interest_car = df_car['Total_Interest'].max()
+        st.write(f"Total Interest Paid over {car_years}y: **{total_interest_car:,.2f} €**")
+        
+        if car_sondertilgung > 0:
+            actual_months = len(df_car)
+            saved_months = (car_years * 12) - actual_months
+            st.success(f"Sondertilgung saves you **{saved_months} months** of debt!")
