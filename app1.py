@@ -11,7 +11,7 @@ st.markdown("""
     .main { background-color: #f5f7f9; }
     .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #e0e0e0; }
     </style>
-    """, unsafe_allow_stdio=True)
+    """, unsafe_allow_html=True)  # Changed from unsafe_allow_stdio to unsafe_allow_html
 
 # --- SIDEBAR NAVIGATION ---
 st.sidebar.title("🇩🇪 Finance Calculator")
